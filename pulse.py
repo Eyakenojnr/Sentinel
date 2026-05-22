@@ -20,13 +20,10 @@ def ping_url(url):
         r = requests.get(url, timeout=1, verify=True)
         duration_ms = r.elapsed.total_seconds() * 1000
     except requests.exceptions.ReadTimeout as errrt:
-        print("Time out")
         return {"url": url, "status_code": None, "time_ms": None, "error": "Time out"}
     except requests.exceptions.MissingSchema as errmiss:
-        print("Missing schema: check the url and try again.")
-        return {"url": url, "status_code": None, "time_ms": None, "error": "Missing schema"}
+        return {"url": url, "status_code": None, "time_ms": None, "error": "Missing schema: check URL and try again"}
     except requests.exceptions.ConnectionError as conerr:
-        print("Connection error")
         return {"url": url, "status_code": None, "time_ms": None, "error": "Connection error"}
     
     return {"url": url, "status_code": r.status_code, "time_ms": duration_ms, "error": None}
