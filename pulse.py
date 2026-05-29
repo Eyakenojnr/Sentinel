@@ -6,12 +6,27 @@
 """
 import requests
 import time
-import csv
-import os
+import sqlite3
 from datetime import datetime, timezone
 
+
 url = input("Enter url: ")
-output_file = 'metrics.csv'
+db_name = 'metrics.db'
+# Initialize database
+conn = sqlite3.connect(db_name)
+cursor = conn.cursor()
+# Create table if it doesn't exist
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS pings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT,
+        url TEXT,
+        status_code INTEGER,
+        time_ms REAL,
+        error TEXT
+    )
+''')
+conn.commit()
 
 def ping_url(url):
     """Function that pings a website.
@@ -23,7 +38,7 @@ def ping_url(url):
     current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     
     try:
-        r = requests.get(url, timeout=5, verify=True)
+        r = requests.get(url, timeout=5)
         duration_ms = r.elapsed.total_seconds() * 1000
     except requests.exceptions.ReadTimeout as errrt:
         return {"timestamp": current_time, "url": url, "status_code": None, "time_ms": None, "error": "Time out"}
@@ -35,28 +50,24 @@ def ping_url(url):
     return {"timestamp": current_time, "url": url, "status_code": r.status_code, "time_ms": duration_ms, "error": None}
 
 
-# Check if file exists before writing to it, this prevent writing  CSV header multiple times when appending to the file
-file_exists = os.path.isfile(output_file)
-needs_header = not file_exists or os.path.getsize(output_file) == 0  # Header is only needed if file doesn't exist OR if it is empty (0 bytes)
+print(f"Monitoring {url}... Press Ctrl+C to stop.")
 
-with open(output_file, 'a', newline='') as csvfile:
-    field_names = ['timestamp', 'url', 'status_code', 'time_ms', 'error']
-    writer = csv.DictWriter(csvfile, fieldnames=field_names)
-    
-    if needs_header:
-        writer.writeheader()
-        csvfile.flush()  # Ensures header is written immediately
-    
-    print(f"Monitoring {url}... Press Ctrl+C to stop.")
-    
-    try:
-        while True:
-            result = ping_url(url)
-            writer.writerow(result)
-            csvfile.flush()  # Force Python to write to file immediately to prevent data loss
-            # Check if data exists before printing to console
-            time_str = f"{result['time_ms']:.2f}ms" if result['time_ms'] else "N/A"
-            print(f"{result['timestamp']} - {result['status_code']} - {time_str}")
-            time.sleep(5)  # Pause for 5 secs
-    except KeyboardInterrupt:
-        print("\nMonitoring stopped.")
+try:
+    while True:
+        # Get data
+        data = ping_url(url)
+        
+        # Insert into SQLite
+        query = '''INSERT INTO pings (timestamp, url, status_code, time_ms, error)
+                    VALUES (:timestamp, :url, :status_code, :time_ms, :error)'''
+        cursor.execute(query, data)
+        conn.commit()
+        # Print output on terminal
+        time_str = f"{data['time_ms']:.2f}ms" if data['time_ms'] else "N/A"
+        print(f"{data['timestamp']} - {data['status_code']} - {time_str}")
+        time.sleep(5)  # 5secs pause
+except KeyboardInterrupt:
+    print("\nMonitoring stopped.")
+finally:
+    # Close connection
+    conn.close()
