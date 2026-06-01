@@ -8,12 +8,18 @@ import requests
 import time
 import sqlite3
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-url = input("Enter url: ")
+urls = [
+    "https://google.com",
+    "https://httpstat.us/500",
+    "http://this-is-a-bad-url.com",
+    "https://github.com"
+] #input("Enter url: ")
 db_name = 'metrics.db'
 # Initialize database
-conn = sqlite3.connect(db_name)
+conn = sqlite3.connect(db_name, check_same_thread=False)
 cursor = conn.cursor()
 # Create table if it doesn't exist
 cursor.execute('''
@@ -50,24 +56,32 @@ def ping_url(url):
     return {"timestamp": current_time, "url": url, "status_code": r.status_code, "time_ms": duration_ms, "error": None}
 
 
-print(f"Monitoring {url}... Press Ctrl+C to stop.")
+print(f"Monitoring {urls}... Press Ctrl+C to stop.")
 
 try:
     while True:
-        # Get data
-        data = ping_url(url)
+        start_loop = time.time()
         
-        # Insert into SQLite
-        query = '''INSERT INTO pings (timestamp, url, status_code, time_ms, error)
-                    VALUES (:timestamp, :url, :status_code, :time_ms, :error)'''
-        cursor.execute(query, data)
-        conn.commit()
-        # Print output on terminal
-        time_str = f"{data['time_ms']:.2f}ms" if data['time_ms'] else "N/A"
-        print(f"{data['timestamp']} - {data['status_code']} - {time_str}")
-        time.sleep(5)  # 5secs pause
+        # Using ThreadPoolExecutor to ping all URLs at once
+        with ThreadPoolExecutor(max_workers=len(urls)) as executor:
+            # Map the function to the URLs
+            future_to_url = {executor.submit(ping_url, url): url for url in urls}
+            
+            # Process results as they finish
+            for future in as_completed(future_to_url):
+                data = future.result()
+                # Insert into SQLite    
+                query = '''INSERT INTO pings (timestamp, url, status_code, time_ms, error)
+                            VALUES (:timestamp, :url, :status_code, :time_ms, :error)'''
+                cursor.execute(query, data)
+                conn.commit()
+                # Print output on terminal
+                time_str = f"{data['time_ms']:.2f}ms" if data['time_ms'] else "N/A"
+                print(f"[{data['timestamp']}] {data['url']} -> {data['status_code']} ({time_str})")
+                
+            # 5secs pause
+            time.sleep(5)
 except KeyboardInterrupt:
     print("\nMonitoring stopped.")
 finally:
-    # Close connection
     conn.close()
