@@ -16,8 +16,9 @@ urls = [
     "https://httpstat.us/500",
     "http://this-is-a-bad-url.com",
     "https://github.com"
-] #input("Enter url: ")
+]
 db_name = 'metrics.db'
+interval = 5
 # Initialize database
 conn = sqlite3.connect(db_name, check_same_thread=False)
 cursor = conn.cursor()
@@ -44,7 +45,7 @@ def ping_url(url):
     current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     
     try:
-        r = requests.get(url, timeout=5)
+        r = requests.get(url, timeout=4)
         duration_ms = r.elapsed.total_seconds() * 1000
     except requests.exceptions.ReadTimeout as errrt:
         return {"timestamp": current_time, "url": url, "status_code": None, "time_ms": None, "error": "Time out"}
@@ -56,14 +57,15 @@ def ping_url(url):
     return {"timestamp": current_time, "url": url, "status_code": r.status_code, "time_ms": duration_ms, "error": None}
 
 
-print(f"Monitoring {urls}... Press Ctrl+C to stop.")
+print(f"Sentinel active!\nMonitoring {urls}... \nPress Ctrl+C to stop.")
 
-try:
-    while True:
-        start_loop = time.time()
-        
-        # Using ThreadPoolExecutor to ping all URLs at once
-        with ThreadPoolExecutor(max_workers=len(urls)) as executor:
+# Using ThreadPoolExecutor to ping all URLs at once
+with ThreadPoolExecutor(max_workers=len(urls)) as executor:
+    try:
+        while True:
+            # Record precise start time
+            start_tick = time.perf_counter()
+            
             # Map the function to the URLs
             future_to_url = {executor.submit(ping_url, url): url for url in urls}
             
@@ -74,14 +76,17 @@ try:
                 query = '''INSERT INTO pings (timestamp, url, status_code, time_ms, error)
                             VALUES (:timestamp, :url, :status_code, :time_ms, :error)'''
                 cursor.execute(query, data)
-                conn.commit()
-                # Print output on terminal
-                time_str = f"{data['time_ms']:.2f}ms" if data['time_ms'] else "N/A"
-                print(f"[{data['timestamp']}] {data['url']} -> {data['status_code']} ({time_str})")
-                
-            # 5secs pause
-            time.sleep(5)
-except KeyboardInterrupt:
-    print("\nMonitoring stopped.")
-finally:
-    conn.close()
+            
+            # Batch commit: 1 disk write per interval
+            conn.commit()
+            
+            # Compensation for time drift
+            elapsed = time.perf_counter() - start_tick
+            sleep_time = max(0, interval - elapsed)
+            
+            print(f"Batch completed in {elapsed:.2f}s. Sleeping for {sleep_time:.2f}s")
+            time.sleep(sleep_time)
+    except KeyboardInterrupt:
+        print("\nMonitoring stopped.")
+    finally:
+        conn.close()
