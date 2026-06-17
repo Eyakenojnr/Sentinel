@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentinel Monitor - Dashboard</title>
+  </head>
+  <body>
+    <header>
+      <h1>The Sentinel</h1>
+    </header>
+    <main>
+      <div id="monitor-list">Loading...</div>
+    </main>
+    <footer>&copy; 2026 Sentinel Project</footer>
+
+    <script>
+      async function getStatus() {
+          try {
+            const response = await fetch("http://127.0.0.1:8000/status");
+
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log(data);
+						return data;
+          } catch (error) {
+            console.error(error.message);
+          }
+      }
+
+      async function refreshDashboard() {
+        const listDiv = document.getElementById('monitor-list');
+        const pings = await getStatus();
+
+        if (pings) {
+          // Clear "Loading" text
+          listDiv.innerHTML = '';
+
+          // Loop through Sentinel's data & create HTML
+          pings.forEach(ping => {
+            const item = document.createElement('div');
+						item.className = 'ping-row';
+						item.innerHTML = `
+							<strong>${ping.url}</strong>
+							<span>${ping.status_code || 'DOWN'}</span>
+							<span>${ping.time_ms ? ping.time_ms.toFixed(2) + 'ms' : 'Error'}</span>
+						`;
+						listDiv.appendChild(item);
+          });
+        }
+      }
+
+			refreshDashboard();
+    </script>
+  </body>
+</html>
