@@ -4,53 +4,88 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sentinel Monitor - Dashboard</title>
+    <style>
+      /* Base table styles */
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
+
+      /* Conditional Classes */
+      .status-good { background-color: #d4edda; color: #155724; }
+      .status-down { background-color: #f8d7da; color: #721c24; }
+    </style>
   </head>
   <body>
     <header>
       <h1>The Sentinel</h1>
     </header>
     <main>
-      <div id="monitor-list">Loading...</div>
+      <table>
+        <thead>
+          <tr>
+            <th>URL</th>
+            <th>Status</th>
+            <th>Response Time</th>
+            <th>Last Checked</th>
+          </tr>
+        </thead>
+        <tbody id="monitor-body"></tbody>
+      </table>
     </main>
     <footer>&copy; 2026 Sentinel Project</footer>
 
     <script>
       async function getStatus() {
-          try {
-            const response = await fetch("http://127.0.0.1:8000/status");
+        try {
+          const response = await fetch("http://127.0.0.1:8000/status");
 
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            console.log(data);
-						return data;
-          } catch (error) {
-            console.error(error.message);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
           }
+
+          const data = await response.json();
+          console.log(data);
+					return data;
+        } catch (error) {
+          console.error(error.message);
+        }
       }
 
       async function refreshDashboard() {
-        const listDiv = document.getElementById('monitor-list');
+        const tbody = document.getElementById('monitor-body');
         const pings = await getStatus();
 
-        if (pings) {
-          // Clear "Loading" text
-          listDiv.innerHTML = '';
-
-          // Loop through Sentinel's data & create HTML
-          pings.forEach(ping => {
-            const item = document.createElement('div');
-						item.className = 'ping-row';
-						item.innerHTML = `
-							<strong>${ping.url}</strong>
-							<span>${ping.status_code || 'DOWN'}</span>
-							<span>${ping.time_ms ? ping.time_ms.toFixed(2) + 'ms' : 'Error'}</span>
-						`;
-						listDiv.appendChild(item);
-          });
+        // If no data exists...
+        if (!pings) {
+          document.getElementById('monitor-body').innerHTML = "\
+            <tr><td colspan='5'>Error: Couldn't connect to API</td></tr>";
+          return;
         }
+
+        tbody.innerHTML = '';  // clear the table
+
+        pings.forEach(ping => {
+          const row = document.createElement('tr');
+
+          // CONDITIONAL LOGIC
+          let rowClass = '';
+          if (ping.status_code === 200) {
+            rowClass = 'status-good';
+          } else {
+            rowClass = 'status-down';  // Offline or Error (status_code is None or 500/404)
+          }
+
+          row.className = rowClass;
+
+          // Populate row cells
+          row.innerHTML = `
+            <td>${ping.url}</td>
+            <td>${ping.status_code || '---'}</td>
+            <td>${ping.time_ms ? ping.time_ms.toFixed(2) + ' ms' : 'N/A'}</td>
+            <td>${ping.last_checked}</td>
+          `;
+
+          tbody.appendChild(row)
+        });
       }
 
 			refreshDashboard();
