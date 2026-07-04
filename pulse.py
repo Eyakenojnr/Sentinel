@@ -55,8 +55,7 @@ class SentinelMonitor:
         """Instantiate Database class and ThreadPoolExecutor."""
         self.db = Database(db_name)
         self.urls = urls
-                
-                
+                           
     def _ping_url(self, url):
         """Private method to ping a single URL."""
         current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -75,9 +74,7 @@ class SentinelMonitor:
             return {"timestamp": current_time, "url": url, "status_code": None, "time_ms": None, "error": "Missing Schema: check URL and try again"}
         except requests.exceptions.ConnectionError as conerr:
             return {"timestamp": current_time, "url": url, "status_code": None, "time_ms": None, "error": "Connection error"}
-    
-    
-    
+       
     def run(self):
         print(f"Sentinel active. Monitoring {len(self.urls)} targets...")
         
