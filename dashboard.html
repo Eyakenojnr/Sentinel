@@ -5,18 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sentinel Monitor - Dashboard</title>
     <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
       /* Base table styles */
-      table { width: 100%; border-collapse: collapse; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
       th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
 
-      /* Conditional Classes */
-      .status-good { background-color: #d4edda; color: #155724; }
-      .status-down { background-color: #f8d7da; color: #721c24; }
+      /* Status Colors */
+      .status-good { background-color: #d4edda; color: #155724; transition: background 0.5s; }
+      .status-down { background-color: #f8d7da; color: #721c24; transition: background 0.5s; }
+
+      #api-status { font-size: 0.8em; color: #666; font-style: italic; }
     </style>
   </head>
   <body>
     <header>
       <h1>The Sentinel</h1>
+      <p id="api-status">Initializing...</p>
     </header>
     <main>
       <table>
@@ -34,61 +38,72 @@
     <footer>&copy; 2026 Sentinel Project</footer>
 
     <script>
-      async function getStatus() {
+      let lastSeenId = 0;
+
+      // Create/Update row for a specific URL
+      function updateTableRow(ping) {
+        const tbody = document.getElementById('monitor-body');
+
+        // Track highest ID to know where to start the next poll
+        if (ping.id > lastSeenId) lastSeenId = ping.id;
+
+        // Find an existing row for the URL & then extract ID from it
+        const rowId = `row-${ping.url.replace(/[^a-zA-Z0-9]/g, '')}`;
+        let row = document.getElementById(rowId);
+
+        // If row doesn't exist, create it
+        if (!row) {
+          row = document.createElement('tr');
+          row.id = rowId;
+          tbody.appendChild(row);
+        }
+
+        // Apply conditional logic for styling
+        row.className = (ping.status_code === 200) ? 'status-good' : 'status-down';
+
+        // Update content
+        row.innerHTML = `
+          <td><strong>${ping.url}</strong></td>
+          <td>${ping.status_code || 'DOWN'}</td>
+          <td>${ping.time_ms ? ping.time_ms.toFixed(2) + ' ms' : 'N/A'}</td>
+          <td>${ping.timestamp || ping.last_checked}</td>
+        `;
+      }
+      
+      // Get current state of everything
+      async function initialLoad() {
         try {
           const response = await fetch("http://127.0.0.1:8000/status");
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
           const data = await response.json();
-          console.log(data);
-					return data;
+          data.forEach(ping => updateTableRow(ping));
+          document.getElementById('api-status').innerHTML = "Live: Waiting for updates...";
+
+          // Start long polling loop once initial loading is done
+          startLongPolling();
         } catch (error) {
-          console.error(error.message);
+          document.getElementById('api-status').innerText = "Error: Cannot reach API.";
         }
       }
 
-      async function refreshDashboard() {
-        const tbody = document.getElementById('monitor-body');
-        const pings = await getStatus();
+      // Long Polling: Waits for new pings to happen
+      async function startLongPolling() {
+        const statusEl = document.getElementById('api-status');
 
-        // If no data exists...
-        if (!pings) {
-          document.getElementById('monitor-body').innerHTML = "\
-            <tr><td colspan='5'>Error: Couldn't connect to API</td></tr>";
-          return;
-        }
+        try {
+          const response = await fetch(`http://127.0.0.1:8000/status/live?last_id=${lastSeenId}`);
 
-        tbody.innerHTML = '';  // clear the table
-
-        pings.forEach(ping => {
-          const row = document.createElement('tr');
-
-          // CONDITIONAL LOGIC
-          let rowClass = '';
-          if (ping.status_code === 200) {
-            rowClass = 'status-good';
-          } else {
-            rowClass = 'status-down';  // Offline or Error (status_code is None or 500/404)
+          if (response.ok) {
+            const newPings = await response.json();
+            newPings.forEach(ping => updateTableRow(ping));
           }
-
-          row.className = rowClass;
-
-          // Populate row cells
-          row.innerHTML = `
-            <td>${ping.url}</td>
-            <td>${ping.status_code || '---'}</td>
-            <td>${ping.time_ms ? ping.time_ms.toFixed(2) + ' ms' : 'N/A'}</td>
-            <td>${ping.last_checked}</td>
-          `;
-
-          tbody.appendChild(row)
-        });
+          startLongPolling();  // Re-connect immediately
+        } catch (error) {
+          statusEl.innerText = "Connection lost. Retrying in 5secs...";
+          setTimeout(startLongPolling, 5000);
+        }
       }
 
-			refreshDashboard();
+			initialLoad();  // Start the process
     </script>
   </body>
 </html>

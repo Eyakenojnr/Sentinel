@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 import sqlite3
 from fastapi.middleware.cors import CORSMiddleware
+import asyncio
 
 
 app = FastAPI()
@@ -34,6 +35,29 @@ def status():
         conn.close()
         
     return list_of_dicts #json_data
+
+@app.get("/status/live")
+async def wait_for_status(last_id: int = 0):
+    """Wait for new data to appear in the DB."""
+    timeout = 30
+    
+    for _ in range(timeout):
+        conn = sqlite3.connect("metrics.db")
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Check for rows newer than what the browser has seen
+        cursor.execute("SELECT * FROM pings WHERE id > ? ORDER BY id DESC", (last_id,))
+        new_data = cursor.fetchall()
+        conn.close()
+        
+        if new_data:
+            return [dict(row) for row in new_data]
+        
+        # If no new data, wait for 1sec before checking DB again
+        await asyncio.sleep(1)  
+        
+    return []
 
 @app.get("/history")
 def history(url: str):
